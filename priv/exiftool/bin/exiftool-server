@@ -1,0 +1,11 @@
+#!/usr/bin/env perl
+use FindBin;
+use lib "$FindBin::Bin/../lib";
+select((select(STDOUT),$| = 1)[0]);
+select((select(STDERR),$| = 1)[0]);
+while(1) {
+    my $cmd = <STDIN>;
+    exit if ($cmd =~/stop/);
+    system( "$FindBin::Bin/exiftool $cmd");
+    print "OK\n";
+}
