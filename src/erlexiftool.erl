@@ -35,6 +35,7 @@ init(_Args) ->
     process_flag(trap_exit, true),
     %% Work out directory of execution
     Priv = code:priv_dir(erlexiftool),
+    io:fwrite("PRIV ~p~n",[Priv]),
     Port = open_port({spawn, Priv++"/exiftool/bin/exiftool-server"}, [stream,exit_status]),
     {ok, #state{port = Port}}.
 

@@ -1,8 +1,8 @@
 {application, erlexiftool,
  [
   {description, ""},
-  {vsn, "1"},
-  {registered, []},
+  {vsn, git},
+  {registered, [erlexiftool]},
   {applications, [
                   kernel,
                   stdlib
