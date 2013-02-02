@@ -6,7 +6,7 @@
 %% API Function Exports
 %% ------------------------------------------------------------------
 
--export([start_link/0]).
+-export([start_link/0, parse/1]).
 
 %% ------------------------------------------------------------------
 %% gen_server Function Exports
@@ -22,6 +22,9 @@
 start_link() ->
     gen_server:start_link({local, ?SERVER}, ?MODULE, [], []).
 
+parse(File) ->
+    gen_server:call(?MODULE, {parse, File}).
+
 %% ------------------------------------------------------------------
 %% Server state.
 %% ------------------------------------------------------------------
@@ -35,16 +38,16 @@ init(_Args) ->
     process_flag(trap_exit, true),
     %% Work out directory of execution
     Priv = code:priv_dir(erlexiftool),
-    io:fwrite("PRIV ~p~n",[Priv]),
-    Port = open_port({spawn, Priv++"/exiftool/bin/exiftool-server"}, [stream,exit_status]),
+    Port = open_port({spawn, Priv++"/exiftool/bin/exiftool-server"}, [{packet,2}, binary]),
     {ok, #state{port = Port}}.
 
 handle_call({parse, Args}, _From, #state{port = Port} = State) ->
-    port_command(Port, Args),
-    case collect_response(Port) of
-        {response, Response} ->
-            {reply, Response, State};
-        timeout ->
+    port_command(Port, term_to_binary(Args)),
+    receive
+        {Port, {data, Any}} ->
+            Response = binary_to_term(Any),
+            {reply, Response, State}
+    after 5000 ->
             {stop, port_timeout, State}
     end;
 handle_call(_Request, _From, State) ->
@@ -61,24 +64,3 @@ terminate(_Reason, _State) ->
 
 code_change(_OldVsn, State, _Extra) ->
     {ok, State}.
-
-%% ------------------------------------------------------------------
-%% Internal Function Definitions
-%% ------------------------------------------------------------------
-collect_response(Port) ->
-    collect_response(Port, [], []).
-
-collect_response(Port, RespAcc, LineAcc) ->
-    receive
-        {Port, {data, {eol, "OK"}}} ->
-            {response, lists:reverse(RespAcc)};
-
-        {Port, {data, {eol, Result}}} ->
-            Line = lists:reverse([Result | LineAcc]),
-            collect_response(Port, [Line | RespAcc], []);
-
-        {Port, {data, {noeol, Result}}} ->
-            collect_response(Port, RespAcc, [Result | LineAcc])
-    after 5000 ->
-            timeout
-    end.

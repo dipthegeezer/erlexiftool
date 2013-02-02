@@ -1,10 +1,119 @@
 #!/usr/bin/env perl
+use strict;
+use warnings;
+
 use FindBin;
-select((select(STDOUT),$| = 1)[0]);
-select((select(STDERR),$| = 1)[0]);
-while(1) {
-    my $cmd = <STDIN>;
-    exit if ($cmd =~/stop/);
-    system( "perl -I$FindBin::Bin/../lib/perl5 $FindBin::Bin/exiftool $cmd");
-    print "OK\n";
+use lib "$FindBin::Bin/../lib/perl5";
+use Image::ExifTool;
+
+BEGIN { select STDOUT; $| = 1; }
+my $SMALL_INTEGER_EXT = 'a';
+my $INTEGER_EXT       = 'b';
+my $FLOAT_EXT         = 'c';
+my $ATOM_EXT          = 'd';
+my $REFERENCE_EXT     = 'e';
+my $NEW_REFERENCE_EXT = 'r';
+my $PORT_EXT          = 'f';
+my $PID_EXT           = 'g';
+my $SMALL_TUPLE_EXT   = 'h';
+my $LARGE_TUPLE_EXT   = 'i';
+my $NIL_EXT           = 'j';
+my $STRING_EXT        = 'k';
+my $LIST_EXT          = 'l';
+my $BINARY_EXT        = 'm';
+my $BIT_BINARY_EXT    = 'M';
+my $SMALL_BIG_EXT     = 'n';
+my $LARGE_BIG_EXT     = 'o';
+my $NEW_FUN_EXT       = 'p';
+my $EXPORT_EXT        = 'q';
+my $FUN_EXT           = 'u';
+
+my $NEW_CACHE         = 'N';
+my $CACHED_ATOM       = 'C';
+
+my $COMPRESSED        = 'P';
+my $VERSION_MAGIC     = pack('C',131);   # 130 in erlang 4.2.
+
+open(my $log,'>',"/tmp/exif.log");
+select((select($log),$|=1)[0]);
+while (1) {
+    my $cmd = _read_cmd();
+    last unless defined $cmd;
+    $cmd = decode($cmd);
+    my $exifTool = new Image::ExifTool;
+    my $info = $exifTool->ImageInfo($cmd,{RequestAll=>1});
+    my $bin = encode($info);
+    print pack("n",length($bin)).$bin;
+}
+close($log);
+
+sub encode{
+    my $info = shift;
+    my @conv;
+    foreach my $key (sort keys %$info) {
+        push(@conv, tuple([atom(lc($key)),bin_string($info->{$key})]));
+    }
+    return $VERSION_MAGIC.list(\@conv);
+}
+
+sub bin_string{
+    my $obj = shift;
+    return $BINARY_EXT . pack("N",length($obj)) . $obj;
+}
+
+sub atom{
+    my $obj = shift;
+    return $ATOM_EXT . pack("n",length($obj)) . $obj;
+}
+
+sub tuple{
+    my $obj = shift;
+    my $n = @$obj;
+    if( $n<256 ) {
+        return $SMALL_TUPLE_EXT . pack("C",0+@$obj) . join('', @$obj);
+    }
+    else {
+        return $LARGE_TUPLE_EXT . pack("N",0+@$obj) . join('', @$obj);
+    }
+}
+
+sub list{
+    my $obj = shift;
+    return $LIST_EXT . pack('N', 0+@$obj) . join('', @$obj) . $NIL_EXT;
+}
+
+sub decode{
+    my $cmd = shift;
+    unless( $cmd =~ s/^$VERSION_MAGIC// ) {
+		return;
+	}
+    $cmd =~ s/^$STRING_EXT(.{2})//s;
+    my $len = unpack("n",$1);
+    my $str = substr($cmd, 0, $len, '');
+    return $str;
+}
+
+sub _read_cmd {
+	if (my $len = _read_exact(2)) {
+        $len = unpack("n", $len);
+        my $data = _read_exact($len);
+        #my $x = $data;
+        #$x =~ s/([^ -~])/sprintf('[%02d]',unpack("C",$1))/eg;
+        #print $log "_read_cmd $x\n";
+        return $data;
+    }
+    return undef;
+}
+
+sub _read_exact {
+    my $len = shift;
+	my $buf = '';
+	for(1..$len) {
+		my $ret = sysread(STDIN, $buf, 1, length $buf);
+		if( !$ret || !defined($ret) ){
+			return undef;
+		}
+        #print $log ">> $_ ".sprintf('[%02d]',unpack("C",substr($buf,-1)))."\r\n";
+	}
+	return $buf;
 }
