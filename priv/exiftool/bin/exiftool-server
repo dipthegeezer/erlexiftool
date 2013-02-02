@@ -34,59 +34,31 @@ my $CACHED_ATOM       = 'C';
 my $COMPRESSED        = 'P';
 my $VERSION_MAGIC     = pack('C',131);   # 130 in erlang 4.2.
 
-open(my $log,'>',"/tmp/exif.log");
-select((select($log),$|=1)[0]);
+#open(my $log,'>',"/tmp/exif.log");
+#select((select($log),$|=1)[0]);
 while (1) {
     my $cmd = _read_cmd();
     last unless defined $cmd;
+    last unless( $cmd =~ s/^$VERSION_MAGIC// );
     $cmd = decode($cmd);
     my $exifTool = new Image::ExifTool;
     my $info = $exifTool->ImageInfo($cmd,{RequestAll=>1});
-    my $bin = encode($info);
+    my $bin = $VERSION_MAGIC.encode($info);
     print pack("n",length($bin)).$bin;
 }
-close($log);
+#close($log);
 
-sub encode{
+sub encode {
     my $info = shift;
     my @conv;
     foreach my $key (sort keys %$info) {
-        push(@conv, tuple([atom(lc($key)),bin_string($info->{$key})]));
+        push(@conv, to_tuple([to_atom(lc($key)),to_binary($info->{$key})]));
     }
-    return $VERSION_MAGIC.list(\@conv);
+    return to_list(\@conv);
 }
 
-sub bin_string{
-    my $obj = shift;
-    return $BINARY_EXT . pack("N",length($obj)) . $obj;
-}
-
-sub atom{
-    my $obj = shift;
-    return $ATOM_EXT . pack("n",length($obj)) . $obj;
-}
-
-sub tuple{
-    my $obj = shift;
-    my $n = @$obj;
-    if( $n<256 ) {
-        return $SMALL_TUPLE_EXT . pack("C",0+@$obj) . join('', @$obj);
-    }
-    else {
-        return $LARGE_TUPLE_EXT . pack("N",0+@$obj) . join('', @$obj);
-    }
-}
-
-sub list{
-    my $obj = shift;
-    return $LIST_EXT . pack('N', 0+@$obj) . join('', @$obj) . $NIL_EXT;
-}
-
-sub decode{
+sub decode {
     my $cmd = shift;
-    unless( $cmd =~ s/^$VERSION_MAGIC// ) {
-		return;
-	}
     $cmd =~ s/^$STRING_EXT(.{2})//s;
     my $len = unpack("n",$1);
     my $str = substr($cmd, 0, $len, '');
@@ -116,4 +88,56 @@ sub _read_exact {
         #print $log ">> $_ ".sprintf('[%02d]',unpack("C",substr($buf,-1)))."\r\n";
 	}
 	return $buf;
+}
+
+sub to_binary {
+    my $obj = shift;
+    return $BINARY_EXT . pack("N",length($obj)) . $obj;
+}
+
+sub to_atom {
+    my $obj = shift;
+    return $ATOM_EXT . pack("n",length($obj)) . $obj;
+}
+
+sub to_tuple {
+    my $obj = shift;
+    my $n = @$obj;
+    if( $n<256 ) {
+        return $SMALL_TUPLE_EXT . pack("C",0+@$obj) . join('', @$obj);
+    }
+    else {
+        return $LARGE_TUPLE_EXT . pack("N",0+@$obj) . join('', @$obj);
+    }
+}
+
+sub to_list {
+    my $obj = shift;
+    return $LIST_EXT . pack('N', 0+@$obj) . join('', @$obj) . $NIL_EXT;
+}
+
+sub to_pid {
+    my $obj = shift;
+    my ($atom, $pid, $serial, $creation) = @$obj;
+    return $PID_EXT . $ATOM_EXT . pack("n", length($atom)). $atom . pack("N", $pid) . pack("N", $serial) . pack("C", $creation);
+}
+
+sub to_int {
+    my $obj = shift;
+    if( $obj>=0 && $obj<=255 ) {
+        return $SMALL_INTEGER_EXT . pack("C", $obj);
+    }
+    else {
+        return $INTEGER_EXT . pack("N", $obj);
+    }
+}
+
+sub to_float {
+    my $obj = shift;
+    return $FLOAT_EXT . substr(sprintf("%.20e", $obj).("\0"x31), 0, 31);
+}
+
+sub to_string {
+    my $obj = shift;
+    return $STRING_EXT . pack('n', length($obj)) . $obj;
 }
